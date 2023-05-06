@@ -161,3 +161,6 @@ cython_debug/
 
 # Project description PDF
 challenge.pdf
+
+# MacOS stuff
+.DS_Store
