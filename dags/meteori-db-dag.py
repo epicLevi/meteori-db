@@ -32,12 +32,12 @@ with DAG(
     def extract_task(url_list: 'list[str]' = default_url_list, **context):
         task_instance = context['task_instance']
         city_data_list: 'list[dict]' = []
-        reading_id = f'{datetime.now().isoformat()}'
+        run_id = f'{datetime.now().isoformat()}'
 
         for url in url_list:
             try:
                 response = requests.get(url)
-                city_data_list.append(parse_response(reading_id, response))
+                city_data_list.append(parse_response(run_id, response))
                 response.raise_for_status()
                 log.info(f'Received data from {url}')
 
@@ -46,11 +46,11 @@ with DAG(
 
         task_instance.xcom_push(key='city_data_list', value=city_data_list)
 
-    def parse_response(reading_id: str, response: requests.Response = None) -> 'dict':
+    def parse_response(run_id: str, response: requests.Response = None) -> 'dict':
         city_name = response.url.split('/')[-2]
         url = response.url
         city_dict = {
-            'reading_id': reading_id,
+            'run_id': run_id,
             'city': city_name,
             'url': url,
             'status_code': response.status_code
@@ -92,9 +92,17 @@ with DAG(
     task1 = extract_task()
     # [END extract_task]
 
-    # [START create_db]
-    @task(task_id='create_db')
-    def create_db():
+    # [START tmp_drop_tables_task]
+    @task(task_id='tmp_drop_tables_task')
+    def tmp_drop_tables_task():
+        pass
+
+    tmp_task = tmp_drop_tables_task()
+    # [END tmp_drop_tables_task]
+
+    # [START create_db_task]
+    @task(task_id='create_db_task')
+    def create_db_task():
         conn = sqlite3.connect('meteori.db')
         cursor = conn.cursor()
 
@@ -104,7 +112,8 @@ with DAG(
         CREATE TABLE IF NOT EXISTS responses (
             response_id INTEGER PRIMARY KEY AUTOINCREMENT,
             url TEXT,
-            status_code INTEGER
+            status_code INTEGER,
+            run_id TEXT
         );
         '''
         cursor.execute(create_table_query)
@@ -112,7 +121,7 @@ with DAG(
         create_table_query = '''
         CREATE TABLE IF NOT EXISTS cities (
             city_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            city_name TEXT
+            name TEXT
         );
         '''
         cursor.execute(create_table_query)
@@ -136,21 +145,42 @@ with DAG(
         cursor.close()
         conn.close()
 
-    task2 = create_db()
-    # [END create_db]
+    task2 = create_db_task()
+    # [END create_db_task]
 
-    # [START load_task]
-    @task(task_id='transform_task')
-    def load_task(**context):
-        task_instance = context['task_instance']
+    # [START populate_db_task]
+    @task(task_id='populate_db_task')
+    def populate_db_task(**context):
         # TODO: use a Dataset instead of XComs.
         # XComs are not meant to pass large values,
         # so this is not ideal when scraping a large number of cities
+        task_instance = context['task_instance']
         city_data_list = task_instance.xcom_pull(
             task_ids='extract_task', key='city_data_list')
-        log.info(f'city_data_list: {city_data_list}')
 
-    task3 = load_task()
-    # [END transform_task]
+        conn = sqlite3.connect('meteori.db')
+        cursor = conn.cursor()
+
+        # 1. Insert data into the responses table
+        # 2. Inser data into the cities table, if it doesn't exist
+        # 3. Insert data into the meteored_readings table, if response was ok
+
+        # Insert data into the table
+        # insert_data_query = '''
+        # INSERT INTO users (name, age)
+        # VALUES (?, ?);
+        # '''
+        # data = [
+        #     ('John', 25),
+        #     ('Alice', 30),
+        #     ('Bob', 35)
+        # ]
+        # cursor.executemany(insert_data_query, data)
+
+        # Commit the changes to the database
+        conn.commit()
+
+    task3 = populate_db_task()
+    # [END populate_db_task]
 
     task1 >> task2 >> task3
