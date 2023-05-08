@@ -121,6 +121,7 @@ def meteori_db_dag_taskflow():
         return TaskFeeling['OK']
     # [END create_db_task]
 
+    # TODO: implement get_url_list_task
     default_url_list = [
         'https://www.meteored.mx/ciudad-de-mexico/historico',
         'https://www.meteored.mx/monterrey/historico',
@@ -201,6 +202,8 @@ def meteori_db_dag_taskflow():
     # [START transform_task]
     @task()
     def transform_task(city_data_list: 'list[dict]'):
+        # NOTE: this transformation is symbolic, as the data is moved
+        # as a string from task to task when Airflow auto-serializes it.
         transformed_city_data_list: 'list[dict]' = []
 
         for city_data in city_data_list:
