@@ -101,7 +101,7 @@ def meteori_db_dag_taskflow():
                 distance REAL,
                 temperature INTEGER,
                 humidity REAL,
-                last_updated TEXT,
+                last_updated DATETIME,
                 city_id INTEGER,
                 response_id INTEGER,
                 FOREIGN KEY (city_id) REFERENCES cities (city_id),
@@ -167,7 +167,7 @@ def meteori_db_dag_taskflow():
             except ValueError as e:
                 log.error(
                     'Hint: use one of these: '
-                    f'{ExtractPatternKey.keys()}. '
+                    f'{ExtractPatternKey.keys()}.'
                     f'{e}'
                 )
                 return None
@@ -201,7 +201,31 @@ def meteori_db_dag_taskflow():
     # [START transform_task]
     @task()
     def transform_task(city_data_list: 'list[dict]'):
-        return city_data_list
+        transformed_city_data_list: 'list[dict]' = []
+
+        for city_data in city_data_list:
+            transformed_city_data = city_data.copy()
+
+            transformed_city_data.update({
+                'status_code': int(city_data['status_code'])
+            })
+
+            if transformed_city_data['status_code'] != 200:
+                continue
+
+            transformed_city_data.update({
+                'distance': float(city_data['distance']),
+                'last_updated': transform_date(city_data['last_updated']),
+                'temperature': int(city_data['temperature']),
+                'humidity': float(city_data['humidity']),
+            })
+
+            transformed_city_data_list.append(transformed_city_data)
+
+        return transformed_city_data_list
+
+    def transform_date(date_str: str):
+        return datetime.strptime(date_str, '%d/%m/%Y %H:%M')
     # [END transform_task]
 
     # [START populate_db_task]
