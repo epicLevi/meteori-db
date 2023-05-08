@@ -215,7 +215,7 @@ def meteori_db_dag_taskflow():
 
             transformed_city_data.update({
                 'distance': float(city_data['distance']),
-                'last_updated': transform_date(city_data['last_updated']),
+                'last_updated': city_data['last_updated'],
                 'temperature': int(city_data['temperature']),
                 'humidity': float(city_data['humidity']),
             })
@@ -225,7 +225,9 @@ def meteori_db_dag_taskflow():
         return transformed_city_data_list
 
     def transform_date(date_str: str):
-        return datetime.strptime(date_str, '%d/%m/%Y %H:%M')
+        # transform_date is called from load_task when inserting data
+        # until then, date remains a string in the transformed_city_data_list
+        return datetime.strptime(date_str, '%d/%m/%Y %H:%M:%S')
     # [END transform_task]
 
     # [START populate_db_task]
