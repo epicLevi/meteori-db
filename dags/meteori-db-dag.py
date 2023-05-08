@@ -13,6 +13,13 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
+ExtractPatternKey = {
+    'distance': 'distance',
+    'last_updated': 'last_updated',
+    'temperature': 'temperature',
+    'humidity': 'humidity'
+}
+
 TaskFeeling = {
     'BAD_SQL': -1,
     'OK': 0
@@ -67,44 +74,50 @@ def meteori_db_dag_taskflow():
         conn = sqlite3.connect('meteori.db')
         cursor = conn.cursor()
 
-        conn.execute("PRAGMA foreign_keys = ON;")
+        try:
+            conn.execute("PRAGMA foreign_keys = ON;")
 
-        create_table_query = '''
-        CREATE TABLE IF NOT EXISTS responses (
-            response_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT,
-            status_code INTEGER,
-            run_id TEXT
-        );
-        '''
-        cursor.execute(create_table_query)
+            create_table_query = '''
+            CREATE TABLE IF NOT EXISTS responses (
+                response_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT,
+                status_code INTEGER,
+                run_id TEXT
+            );
+            '''
+            cursor.execute(create_table_query)
 
-        create_table_query = '''
-        CREATE TABLE IF NOT EXISTS cities (
-            city_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT
-        );
-        '''
-        cursor.execute(create_table_query)
+            create_table_query = '''
+            CREATE TABLE IF NOT EXISTS cities (
+                city_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT
+            );
+            '''
+            cursor.execute(create_table_query)
 
-        create_table_query = '''
-        CREATE TABLE IF NOT EXISTS meteored_readings (
-            meteored_reading_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            distance REAL,
-            temperature INTEGER,
-            humidity REAL,
-            last_updated TEXT,
-            city_id INTEGER,
-            response_id INTEGER,
-            FOREIGN KEY (city_id) REFERENCES cities (city_id),
-            FOREIGN KEY (response_id) REFERENCES responses (response_id)
-        );
-        '''
-        cursor.execute(create_table_query)
+            create_table_query = '''
+            CREATE TABLE IF NOT EXISTS meteored_readings (
+                meteored_reading_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                distance REAL,
+                temperature INTEGER,
+                humidity REAL,
+                last_updated TEXT,
+                city_id INTEGER,
+                response_id INTEGER,
+                FOREIGN KEY (city_id) REFERENCES cities (city_id),
+                FOREIGN KEY (response_id) REFERENCES responses (response_id)
+            );
+            '''
+            cursor.execute(create_table_query)
 
-        conn.commit()
-        cursor.close()
-        conn.close()
+            conn.commit()
+        except sqlite3.Error as e:
+            log.error(f'Error creating tables: {e}')
+            return TaskFeeling['BAD_SQL']
+        finally:
+            cursor.close()
+            conn.close()
+
         return TaskFeeling['OK']
     # [END create_db_task]
 
@@ -128,7 +141,7 @@ def meteori_db_dag_taskflow():
                 response.raise_for_status()
                 log.info(f'Received data from {url}')
 
-            except Exception as e:
+            except requests.HTTPError as e:
                 log.error(f'Error scraping {url}): {str(e)}')
 
         return city_data_list
@@ -146,13 +159,17 @@ def meteori_db_dag_taskflow():
         if response.status_code == 200:
             try:
                 city_dict.update({
-                    'distance': extract('distance', response),
-                    'last_updated': extract('last_updated', response),
-                    'temperature': extract('temperature', response),
-                    'humidity': extract('humidity', response),
+                    'distance': extract(ExtractPatternKey['distance'], response),
+                    'last_updated': extract(ExtractPatternKey['last_updated'], response),
+                    'temperature': extract(ExtractPatternKey['temperature'], response),
+                    'humidity': extract(ExtractPatternKey['humidity'], response),
                 })
             except ValueError as e:
-                log.error(f'This should not have happened bro: {e}')
+                log.error(
+                    'Hint: use one of these: '
+                    f'{ExtractPatternKey.keys()}. '
+                    f'{e}'
+                )
                 return None
 
         return city_dict
@@ -161,13 +178,13 @@ def meteori_db_dag_taskflow():
         text = response.text
         match: re.Match = None
 
-        if pattern == 'distance':
+        if pattern == ExtractPatternKey['distance']:
             match = re.search(r'<span id="dist_cant">([\d.]+)km<\/span>', text)
-        elif pattern == 'last_updated':
+        elif pattern == ExtractPatternKey['last_updated']:
             match = re.search(r'<span id="fecha_act_dato">(.+?)<\/span>', text)
-        elif pattern == 'temperature':
+        elif pattern == ExtractPatternKey['temperature']:
             match = re.search(r'<span id="ult_dato_temp">(\d+)<\/span>', text)
-        elif pattern == 'humidity':
+        elif pattern == ExtractPatternKey['humidity']:
             match = re.search(
                 r'<span id="ult_dato_hum">([\d.]+)<\/span>', text)
         else:
