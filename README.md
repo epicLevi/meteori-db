@@ -420,6 +420,8 @@ def print_to_log_task(load_task_feeling: int):
 
 Select everything from meteored_readings, where only successful readings are stored, inner join excludes null data. Them, simply print to log.
 
+![log screen](img/3.png)
+
 ## Contributing
 
 Contributions to this project are welcome. To contribute, follow these steps:
